@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tower</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #f0ece4;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'DM Mono', monospace;
+    user-select: none;
+  }
+
+  #gameContainer {
+    position: relative;
+    width: 420px;
+    height: 620px;
+    overflow: hidden;
+    background: #faf8f4;
+    border-radius: 20px;
+    box-shadow: 0 8px 40px rgba(180,160,130,0.22), 0 2px 8px rgba(180,160,130,0.12);
+    cursor: pointer;
+  }
+
+  #threeCanvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 22px 26px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #score {
+    font-family: 'DM Serif Display', serif;
+    font-size: 56px;
+    color: #3d3530;
+    line-height: 1;
+    letter-spacing: -1px;
+  }
+
+  #best {
+    font-size: 11px;
+    color: #b5a898;
+    text-align: right;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  #best span {
+    display: block;
+    font-family: 'DM Serif Display', serif;
+    font-size: 24px;
+    color: #7a6e66;
+    margin-top: 2px;
+    letter-spacing: 0;
+  }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(250, 248, 244, 0.88);
+    z-index: 20;
+    transition: opacity 0.35s;
+    backdrop-filter: blur(4px);
+  }
+
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  #overlay h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 72px;
+    color: #3d3530;
+    letter-spacing: 6px;
+    margin-bottom: 6px;
+  }
+
+  #overlay .sub {
+    font-size: 11px;
+    color: #b5a898;
+    letter-spacing: 4px;
+    margin-bottom: 44px;
+    text-transform: uppercase;
+  }
+
+  .tap-btn {
+    padding: 13px 38px;
+    background: #c9b8a8;
+    color: #faf8f4;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .tap-btn:hover {
+    background: #b5a090;
+    transform: scale(1.04);
+  }
+
+  #gameOverScore {
+    font-family: 'DM Serif Display', serif;
+    font-size: 96px;
+    color: #3d3530;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  #gameOverLabel {
+    font-size: 10px;
+    color: #b5a898;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+
+  #comboFlash {
+    position: absolute;
+    top: 46%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 13px;
+    color: #9c8a78;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="threeCanvas"></canvas>
+  <div id="ui">
+    <div id="score">0</div>
+    <div id="best">Best<span id="bestVal">0</span></div>
+  </div>
+  <div id="comboFlash">PERFECT</div>
+  <div id="overlay" id="overlay">
+    <h1>TOWER</h1>
+    <p class="sub">tap to place</p>
+    <button class="tap-btn" id="startBtn">Start Game</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const PALETTES = [
+  ['#f4b8c1','#f7cdd3','#e89aa5'], // rose
+  ['#b8d4f4','#cde0f7','#9abde9'], // sky
+  ['#b8f4d4','#cdf7e4','#8ee8bc'], // mint
+  ['#f4d4b8','#f7e4cd','#e8bc8e'], // peach
+  ['#d4b8f4','#e4cdf7','#bc8ee8'], // lavender
+  ['#f4f4b8','#f7f7cd','#e8e88e'], // butter
+  ['#b8f4f4','#cdf7f7','#8ee8e8'], // aqua
+];
+
+const BASE_COLOR   = '#c9b8a8';
+const GROUND_COLOR = '#ede8e0';
+
+const container = document.getElementById('gameContainer');
+const canvas    = document.getElementById('threeCanvas');
+const W = 420, H = 620;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0xfaf8f4, 1);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xfaf8f4, 30, 90);
+
+const aspect = W / H;
+const viewSize = 14;
+const camera = new THREE.OrthographicCamera(
+  -viewSize * aspect, viewSize * aspect,
+   viewSize, -viewSize,
+  0.1, 200
+);
+
+camera.position.set(20, 20, 20);
+camera.lookAt(0, 0, 0);
+
+const ambient = new THREE.AmbientLight(0xfff8f0, 1.1);
+scene.add(ambient);
+
+const topLight = new THREE.DirectionalLight(0xffffff, 0.4);
+topLight.position.set(0, 30, 0);
+topLight.castShadow = true;
+topLight.shadow.mapSize.set(1024, 1024);
+topLight.shadow.camera.near = 0.5;
+topLight.shadow.camera.far = 100;
+topLight.shadow.camera.left = -20;
+topLight.shadow.camera.right = 20;
+topLight.shadow.camera.top = 20;
+topLight.shadow.camera.bottom = -20;
+topLight.shadow.bias = -0.001;
+scene.add(topLight);
+
+const sun = new THREE.DirectionalLight(0xfff5e8, 0.55);
+sun.position.set(12, 8, 10);
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0xe8f0ff, 0.25);
+fill.position.set(-8, 4, -6);
+scene.add(fill);
+
+const groundGeo  = new THREE.PlaneGeometry(60, 60);
+const groundMat  = new THREE.MeshLambertMaterial({ color: 0xede8e0 });
+const ground     = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.05;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const gridHelper = new THREE.GridHelper(40, 40, 0xd8d0c4, 0xd8d0c4);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+const BLOCK_H   = 0.55;
+const BASE_W    = 4.0;
+const MIN_W     = 0.3;
+
+let state        = 'idle';
+let score        = 0;
+let best         = 0;
+let perfect      = 0;
+let stackBlocks  = [];
+let movingBlock  = null;
+let debrisMeshes = [];
+let cameraTargetY    = 0;
+let cameraCurrentY   = 20;
+
+const scoreEl   = document.getElementById('score');
+const bestEl    = document.getElementById('bestVal');
+const overlay   = document.getElementById('overlay');
+const startBtn  = document.getElementById('startBtn');
+const comboFlash= document.getElementById('comboFlash');
+
+const SNAP = 0.18;
+
+function makeMat(hexStr) {
+  const c = new THREE.Color(hexStr);
+  return new THREE.MeshPhongMaterial({
+    color: c,
+    shininess: 0,
+    specular: new THREE.Color(0x000000),
+  });
+}
+
+function blockY(level) { return level * BLOCK_H + BLOCK_H / 2; }
+
+function createBlockMesh(wx, wz, level, colorStr) {
+  const geo  = new THREE.BoxGeometry(wx, BLOCK_H, wz);
+
+  const baseColor = new THREE.Color(colorStr);
+  const topColor  = baseColor.clone().lerp(new THREE.Color(0xffffff), 0.10);
+  const sideColor = baseColor.clone().lerp(new THREE.Color(0x000000), 0.22);
+  const botColor  = baseColor.clone().lerp(new THREE.Color(0x000000), 0.22);
+
+  const matRight  = new THREE.MeshPhongMaterial({ color: sideColor, shininess: 0 }); // +X
+  const matLeft   = new THREE.MeshPhongMaterial({ color: sideColor, shininess: 0 }); // -X
+  const matTop    = new THREE.MeshPhongMaterial({ color: topColor,  shininess: 15, specular: new THREE.Color(0x333333) }); // +Y
+  const matBot    = new THREE.MeshPhongMaterial({ color: botColor,  shininess: 0 }); // -Y
+  const matFront  = new THREE.MeshPhongMaterial({ color: sideColor, shininess: 0 }); // +Z
+  const matBack   = new THREE.MeshPhongMaterial({ color: sideColor, shininess: 0 }); // -Z
+
+  const mesh = new THREE.Mesh(geo, [matRight, matLeft, matTop, matBot, matFront, matBack]);
+  mesh.castShadow    = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function initGame() {
+  score   = 0;
+  perfect = 0;
+  scoreEl.textContent = '0';
+
+  stackBlocks.forEach(b => scene.remove(b.mesh));
+  stackBlocks = [];
+  if (movingBlock) { scene.remove(movingBlock.mesh); movingBlock = null; }
+  debrisMeshes.forEach(d => scene.remove(d.mesh));
+  debrisMeshes = [];
+  cameraTargetY  = 0;
+  cameraCurrentY = 20;
+  camera.position.set(20, 20, 20);
+
+  const baseMesh = createBlockMesh(BASE_W, BASE_W, 0, BASE_COLOR);
+  baseMesh.position.set(0, blockY(0), 0);
+  scene.add(baseMesh);
+  stackBlocks.push({ mesh: baseMesh, cx: 0, cz: 0, wx: BASE_W, wz: BASE_W, level: 0 });
+
+  spawnMoving();
+  state = 'playing';
+}
+
+function palColor(scoreVal) {
+  const row = PALETTES[scoreVal % PALETTES.length];
+  return row[Math.floor(Math.random() * row.length)];
+}
+
+function spawnMoving() {
+  const prev  = stackBlocks[stackBlocks.length - 1];
+  const level = prev.level + 1;
+  const color = palColor(score);
+  const speed = Math.min(0.07 + score * 0.0022, 0.22);
+
+  const axis  = (level % 2 === 0) ? 'x' : 'z';
+  const dir   = ((Math.floor(level / 2)) % 2 === 0) ? 1 : -1;
+
+  const spawnOffset = 10;
+  let mesh, pos;
+
+  if (axis === 'x') {
+    pos  = dir > 0 ? prev.cx - spawnOffset : prev.cx + spawnOffset;
+    mesh = createBlockMesh(prev.wx, prev.wz, level, color);
+    mesh.position.set(pos, blockY(level), prev.cz);
+    movingBlock = { mesh, axis, pos, dir, speed, wx: prev.wx, wz: prev.wz,
+                    cx: pos, cz: prev.cz, level, color };
+  } else {
+    pos  = dir > 0 ? prev.cz - spawnOffset : prev.cz + spawnOffset;
+    mesh = createBlockMesh(prev.wx, prev.wz, level, color);
+    mesh.position.set(prev.cx, blockY(level), pos);
+    movingBlock = { mesh, axis, pos, dir, speed, wx: prev.wx, wz: prev.wz,
+                    cx: prev.cx, cz: pos, level, color };
+  }
+
+  scene.add(mesh);
+}
+
+function placeBlock() {
+  if (state !== 'playing' || !movingBlock) return;
+
+  const prev = stackBlocks[stackBlocks.length - 1];
+  const mb   = movingBlock;
+
+  if (mb.axis === 'x') {
+    const mbLeft  = mb.cx - mb.wx / 2;
+    const mbRight = mb.cx + mb.wx / 2;
+    const pvLeft  = prev.cx - prev.wx / 2;
+    const pvRight = prev.cx + prev.wx / 2;
+
+    const ovLeft  = Math.max(pvLeft,  mbLeft);
+    const ovRight = Math.min(pvRight, mbRight);
+    const overlap = ovRight - ovLeft;
+
+    if (overlap <= 0) { triggerDeath(); return; }
+
+    const diff = Math.abs(mb.cx - prev.cx);
+    let finalCx = (ovLeft + ovRight) / 2;
+    let newWx   = overlap;
+
+    if (diff <= SNAP) {
+      finalCx = prev.cx;
+      newWx   = prev.wx;
+      perfect++;
+      if (perfect >= 2) showPerfect();
+    } else {
+      perfect = 0;
+      const debrisDir = mb.cx > prev.cx ? 1 : -1;
+      const cutW = mb.wx - overlap;
+      const debrisCx = debrisDir > 0 ? finalCx + newWx/2 + cutW/2 : finalCx - newWx/2 - cutW/2;
+      spawnDebris3D(debrisCx, mb.cz, mb.level, cutW, mb.wz, mb.color, debrisDir, 0);
+    }
+
+    scene.remove(mb.mesh);
+    const newMesh = createBlockMesh(newWx, mb.wz, mb.level, mb.color);
+    newMesh.position.set(finalCx, blockY(mb.level), mb.cz);
+    scene.add(newMesh);
+    stackBlocks.push({ mesh: newMesh, cx: finalCx, cz: mb.cz, wx: newWx, wz: mb.wz, level: mb.level });
+
+  } else {
+    const mbBack  = mb.cz - mb.wz / 2;
+    const mbFront = mb.cz + mb.wz / 2;
+    const pvBack  = prev.cz - prev.wz / 2;
+    const pvFront = prev.cz + prev.wz / 2;
+
+    const ovBack  = Math.max(pvBack,  mbBack);
+    const ovFront = Math.min(pvFront, mbFront);
+    const overlap = ovFront - ovBack;
+
+    if (overlap <= 0) { triggerDeath(); return; }
+
+    const diff = Math.abs(mb.cz - prev.cz);
+    let finalCz = (ovBack + ovFront) / 2;
+    let newWz   = overlap;
+
+    if (diff <= SNAP) {
+      finalCz = prev.cz;
+      newWz   = prev.wz;
+      perfect++;
+      if (perfect >= 2) showPerfect();
+    } else {
+      perfect = 0;
+      const debrisDir = mb.cz > prev.cz ? 1 : -1;
+      const cutW = mb.wz - overlap;
+      const debrisCz = debrisDir > 0 ? finalCz + newWz/2 + cutW/2 : finalCz - newWz/2 - cutW/2;
+      spawnDebris3D(mb.cx, debrisCz, mb.level, mb.wx, cutW, mb.color, 0, debrisDir);
+    }
+
+    scene.remove(mb.mesh);
+    const newMesh = createBlockMesh(mb.wx, newWz, mb.level, mb.color);
+    newMesh.position.set(mb.cx, blockY(mb.level), finalCz);
+    scene.add(newMesh);
+    stackBlocks.push({ mesh: newMesh, cx: mb.cx, cz: finalCz, wx: mb.wx, wz: newWz, level: mb.level });
+  }
+
+  score++;
+  if (score > best) best = score;
+  scoreEl.textContent = score;
+  bestEl.textContent  = best;
+
+  cameraTargetY = mb.level * BLOCK_H * 0.92;
+
+  movingBlock = null;
+  spawnMoving();
+}
+
+function spawnDebris3D(cx, cz, level, wx, wz, color, dirX, dirZ) {
+  if (wx < 0.01 || wz < 0.01) return;
+  const geo  = new THREE.BoxGeometry(wx, BLOCK_H, wz);
+  const mat  = makeMat(color);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(cx, blockY(level), cz);
+  scene.add(mesh);
+
+  const speed = 0.08 + Math.random() * 0.12;
+  debrisMeshes.push({
+    mesh,
+    vx: dirX * speed + (Math.random() - 0.5) * 0.04,
+    vy: 0.12 + Math.random() * 0.08,
+    vz: dirZ * speed + (Math.random() - 0.5) * 0.04,
+    gravity: 0.006,
+    rotV: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.08,
+      (Math.random() - 0.5) * 0.04,
+      (Math.random() - 0.5) * 0.08
+    ),
+    life: 1.0,
+  });
+}
+
+function showPerfect() {
+  comboFlash.style.opacity = '1';
+  setTimeout(() => comboFlash.style.opacity = '0', 700);
+}
+
+function triggerDeath() {
+  state = 'dead';
+  if (movingBlock) { scene.remove(movingBlock.mesh); movingBlock = null; }
+
+  overlay.innerHTML = '';
+  const sc  = document.createElement('div');
+  sc.id     = 'gameOverScore';
+  sc.textContent = score;
+
+  const lbl = document.createElement('div');
+  lbl.id    = 'gameOverLabel';
+  lbl.textContent = 'Score';
+
+  const btn = document.createElement('button');
+  btn.className = 'tap-btn';
+  btn.textContent = 'Play Again';
+  btn.addEventListener('click', e => { e.stopPropagation(); overlay.classList.add('hidden'); initGame(); });
+
+  overlay.appendChild(sc);
+  overlay.appendChild(lbl);
+  overlay.appendChild(btn);
+  overlay.classList.remove('hidden');
+}
+
+container.addEventListener('click', () => { if (state === 'playing') placeBlock(); });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowDown') { e.preventDefault(); if (state === 'playing') placeBlock(); }
+});
+startBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  overlay.classList.add('hidden');
+  initGame();
+});
+
+let prevTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt  = Math.min((now - prevTime) / 16.67, 3);
+  prevTime  = now;
+
+  if (state === 'playing') {
+    if (movingBlock) {
+      movingBlock.pos += movingBlock.dir * movingBlock.speed * dt;
+      const limit = 12;
+      if (movingBlock.pos > limit || movingBlock.pos < -limit) movingBlock.dir *= -1;
+      if (movingBlock.axis === 'x') {
+        movingBlock.cx = movingBlock.pos;
+        movingBlock.mesh.position.x = movingBlock.pos;
+      } else {
+        movingBlock.cz = movingBlock.pos;
+        movingBlock.mesh.position.z = movingBlock.pos;
+      }
+    }
+
+    for (const d of debrisMeshes) {
+      d.vy -= d.gravity * dt;
+      d.mesh.position.x += d.vx * dt;
+      d.mesh.position.y += d.vy * dt;
+      d.mesh.position.z += d.vz * dt;
+      d.mesh.rotation.x += d.rotV.x * dt;
+      d.mesh.rotation.y += d.rotV.y * dt;
+      d.mesh.rotation.z += d.rotV.z * dt;
+      d.life -= 0.012 * dt;
+      if (Array.isArray(d.mesh.material)) {
+        d.mesh.material.forEach(m => { m.opacity = d.life; m.transparent = true; });
+      } else {
+        d.mesh.material.opacity = d.life;
+        d.mesh.material.transparent = true;
+      }
+    }
+    debrisMeshes = debrisMeshes.filter(d => {
+      if (d.life <= 0) { scene.remove(d.mesh); d.mesh.geometry.dispose(); return false; }
+      return true;
+    });
+  }
+
+  const targetCamY  = 20 + cameraTargetY;
+  cameraCurrentY    = cameraCurrentY + (targetCamY - cameraCurrentY) * 0.05 * dt;
+  camera.position.set(20, cameraCurrentY, 20);
+  camera.lookAt(0, cameraTargetY, 0);
+
+  for (let i = 0; i < stackBlocks.length; i++) {
+    const fromTop = stackBlocks.length - 1 - i;
+    const alpha   = Math.max(0.12, 1 - fromTop * 0.038);
+    const mats = Array.isArray(stackBlocks[i].mesh.material)
+      ? stackBlocks[i].mesh.material
+      : [stackBlocks[i].mesh.material];
+    mats.forEach(m => { m.opacity = alpha; m.transparent = alpha < 1; });
+  }
+
+  topLight.position.set(0, 30 + cameraTargetY, 0);
+  sun.target.position.set(0, cameraTargetY, 0);
+  sun.target.updateMatrixWorld();
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>

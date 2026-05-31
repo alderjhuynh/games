@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Games</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e0e;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0ede6;
+      --muted: #6b6860;
+      --accent: #e8e0cc;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      min-height: 100vh;
+      padding: 3rem 2rem 4rem;
+    }
+
+    header {
+      margin-bottom: 3rem;
+    }
+
+    header h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      letter-spacing: -0.02em;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    header p {
+      margin-top: 0.6rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1px;
+      border: 1px solid var(--border);
+    }
+
+    .game-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 1.5rem;
+      background: var(--surface);
+      border: none;
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s ease;
+      min-height: 180px;
+      position: relative;
+    }
+
+    .game-card:hover {
+      background: #222;
+    }
+
+    .game-card:hover .arrow {
+      transform: translate(3px, -3px);
+    }
+
+    .game-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .game-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1.35rem;
+      line-height: 1.15;
+      margin-top: 0.5rem;
+      color: var(--accent);
+    }
+
+    .arrow {
+      font-size: 1.1rem;
+      color: var(--muted);
+      align-self: flex-end;
+      transition: transform 0.15s ease;
+      user-select: none;
+    }
+
+    .index-num {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      font-size: 0.65rem;
+      color: var(--border);
+      letter-spacing: 0.05em;
+    }
+
+    footer {
+      margin-top: 3rem;
+      font-size: 0.7rem;
+      color: var(--border);
+      letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Games</h1>
+    <p>Choose a game to play</p>
+  </header>
+
+  <!--
+    ADD NEW GAMES HERE.
+    Copy one <a class="game-card"> block, update:
+      href  → the folder name (e.g. href="my_new_game/")
+      the <span class="game-title"> text
+    That's it. The grid tiles automatically.
+  -->
+  <div class="grid">
+
+    <a class="game-card" href="tower/">
+      <span class="index-num">01</span>
+      <div>
+        <span class="game-label">Play</span>
+        <p class="game-title">Tower</p>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </a>
+
+    <a class="game-card" href="brick_burst/">
+      <span class="index-num">02</span>
+      <div>
+        <span class="game-label">Play</span>
+        <p class="game-title">Brick Burst</p>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </a>
+
+    <a class="game-card" href="monarch_match/">
+      <span class="index-num">03</span>
+      <div>
+        <span class="game-label">Play</span>
+        <p class="game-title">Monarch Match</p>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </a>
+
+    <!-- NEW GAME TEMPLATE (remove this comment block to add):
+    <a class="game-card" href="your_game_folder/">
+      <span class="index-num">04</span>
+      <div>
+        <span class="game-label">Play</span>
+        <p class="game-title">Your Game Title</p>
+      </div>
+      <span class="arrow" aria-hidden="true">↗</span>
+    </a>
+    -->
+
+  </div>
+
+  <footer>
+    <p>— select a game above to begin</p>
+  </footer>
+
+</body>
+</html>

@@ -284,7 +284,6 @@ const Physics = {
   },
 
   _collide(bods) {
-    // Collect currently dragged IDs so they skip collision
     const draggedIds = Input.drag ? new Set(Input.drag.pileIds) : new Set();
     for (let i=0;i<bods.length;i++) {
       const a=bods[i];
@@ -454,6 +453,10 @@ const Input = {
   snapTarget: null,
   snapMode: null,
 
+  _longPressTimer: null,
+  _lastTap: 0,
+  _touchStartPos: null,
+
   init() {
     const s = Renderer.sandbox;
     s.addEventListener('mousedown', e => this.down(e));
@@ -461,23 +464,183 @@ const Input = {
     window.addEventListener('mouseup', e => this.up(e));
     s.addEventListener('dblclick', e => this.dbl(e));
     s.addEventListener('contextmenu', e => this.ctx(e));
-    s.addEventListener('touchstart', e => {e.preventDefault();this.down(e)},{passive:false});
-    window.addEventListener('touchmove', e => {e.preventDefault();this.move(e)},{passive:false});
-    window.addEventListener('touchend', e => this.up(e));
+
+    s.addEventListener('touchstart', e => this.touchStart(e), {passive:false});
+    window.addEventListener('touchmove', e => this.touchMove(e), {passive:false});
+    window.addEventListener('touchend', e => this.touchEnd(e), {passive:false});
+    window.addEventListener('touchcancel', e => this.touchEnd(e), {passive:false});
+
     document.addEventListener('keydown', e => {
       if (e.key==='Escape') this.dismissCtx();
     });
   },
 
+
+  touchStart(e) {
+    e.preventDefault();
+    this.dismissCtx();
+    this._clearLongPress();
+
+    if (e.touches.length === 2) {
+      this._clearLongPress();
+      if (this.drag) {
+        const el = Renderer.els.get(this.drag.id);
+        if (el) el.classList.remove('dragging');
+        this.drag = null;
+        this._removeGhost();
+      }
+
+      const t0 = e.touches[0];
+      const body = Physics.topAt(t0.clientX, t0.clientY);
+      if (!body) return;
+
+      this._startTouchDrag(e, /*withPile=*/true);
+
+      const tx0 = t0.clientX, ty0 = t0.clientY;
+      this._longPressTimer = setTimeout(() => {
+        this._longPressTimer = null;
+        if (!this.drag || this.drag.moved) return;
+
+        const d = this.drag;
+        this.drag = null;
+        this._removeGhost();
+        const dragEl = Renderer.els.get(d.id);
+        if (dragEl) dragEl.classList.remove('dragging');
+
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+        this.showStackCtx(tx0, ty0, d.id);
+      }, 500);
+      return;
+    }
+
+    const t = e.touches[0];
+    this._touchStartPos = {x: t.clientX, y: t.clientY, time: Date.now()};
+
+    this._startTouchDrag(e, /*withPile=*/false);
+
+    this._longPressTimer = setTimeout(() => {
+      this._longPressTimer = null;
+      if (!this.drag) return;
+
+      const {x, y} = this._touchStartPos;
+      const moved = this.drag && this.drag.moved;
+      if (moved) return;
+
+      const d = this.drag;
+      this.drag = null;
+      this._removeGhost();
+      const el = Renderer.els.get(d.id);
+      if (el) el.classList.remove('dragging');
+
+      if (navigator.vibrate) navigator.vibrate(30);
+      this.showCtx(x, y, d.id);
+    }, 500);
+  },
+
+  touchMove(e) {
+    e.preventDefault();
+    if (!this.drag) return;
+
+    if (this._touchStartPos && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - this._touchStartPos.x;
+      const dy = t.clientY - this._touchStartPos.y;
+      if (Math.sqrt(dx*dx + dy*dy) > 8) {
+        this._clearLongPress();
+      }
+    }
+
+    this.move(e);
+  },
+
+  touchEnd(e) {
+    const hadLongPressTimer = this._longPressTimer !== null;
+    this._clearLongPress();
+
+    if (!this.drag) return;
+
+    const d = this.drag;
+    const wasTap = !d.moved && e.changedTouches.length > 0;
+
+    if (wasTap && hadLongPressTimer) {
+      const now = Date.now();
+      const dt = now - this._lastTap;
+      this._lastTap = now;
+
+      this.drag = null;
+      this._removeGhost();
+      const el = Renderer.els.get(d.id);
+      if (el) el.classList.remove('dragging');
+
+      if (dt < 320) {
+        this._lastTap = 0;
+        el_flip_anim(d.id);
+        GameState.flip(d.id);
+      }
+    } else {
+      this.up(e);
+    }
+  },
+
+  _clearLongPress() {
+    if (this._longPressTimer) {
+      clearTimeout(this._longPressTimer);
+      this._longPressTimer = null;
+    }
+  },
+
+  _startTouchDrag(e, withPile) {
+    const t = e.touches[0];
+    const x = t.clientX, y = t.clientY;
+
+    const act = this.getAct(e);
+    const body = Physics.topAt(x, y);
+    if (!body) return;
+
+    const pileIds = withPile ? Physics.nearbyIds(body.id) : [body.id];
+
+    for (const id of pileIds) Physics.bringUp(id);
+    Physics.bringUp(body.id, pileIds.length);
+
+    const el = Renderer.els.get(body.id);
+    if (el) el.classList.add('dragging');
+
+    const offsets = {};
+    for (const id of pileIds) {
+      const b = Physics.get(id);
+      offsets[id] = {dx: b.x - body.x, dy: b.y - body.y, da: b.a - body.a};
+    }
+
+    this.drag = {
+      id: body.id,
+      act,
+      x0: x, y0: y,
+      bx0: body.x, by0: body.y,
+      ba0: body.a,
+      pileIds,
+      offsets,
+      lastX: x, lastY: y,
+      moved: false,
+      withSpread: false,
+      spreadDropped: new Set(),
+    };
+  },
+
+
   xy(e) {
     if (e.touches && e.touches.length)
       return {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    if (e.changedTouches && e.changedTouches.length)
+      return {x:e.changedTouches[0].clientX, y:e.changedTouches[0].clientY};
     return {x:e.clientX, y:e.clientY};
   },
 
   getAct(e) {
-    const el = e.target;
-    if (el.dataset && el.dataset.act) return el.dataset.act;
+    const src = e.touches ? e.touches[0] : e;
+    const el = document.elementFromPoint
+      ? document.elementFromPoint(src.clientX, src.clientY)
+      : e.target;
+    if (el && el.dataset && el.dataset.act) return el.dataset.act;
     return 'move';
   },
 
@@ -544,7 +707,6 @@ const Input = {
     e.preventDefault();
 
     const withPile = e.shiftKey || e.ctrlKey || e.metaKey;
-    const withSpread = false;
     const pileIds = withPile ? Physics.nearbyIds(body.id) : [body.id];
 
     for (const id of pileIds) Physics.bringUp(id);
@@ -569,7 +731,7 @@ const Input = {
       offsets,
       lastX: x, lastY: y,
       moved: false,
-      withSpread,
+      withSpread: false,
       spreadDropped: new Set(),
     };
   },
@@ -766,7 +928,6 @@ const Input = {
           b.vy = (Math.random()-0.5)*22;
           b.va = (Math.random()-0.5)*0.6;
         }
-        // Phase 2: tween back to stack center in new random z-order
         setTimeout(() => {
           const newOrder = [...stackIds].sort(() => Math.random()-0.5);
           for (const b of bodies) { b.pinned=true; b.vx=0; b.vy=0; b.va=0; }

@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card Sandbox</title>
+<style>
+:root {
+  --cw: 72px; --ch: 100px; --cr: 6px;
+  --felt: #1e4d2b;
+  --felt-dark: #122b18;
+  --felt-mid: #286038;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{
+  width:100%;height:100%;overflow:hidden;
+  font-family:'Georgia',serif;
+  background:var(--felt-dark);
+  user-select:none;-webkit-user-select:none;
+  touch-action:none;
+}
+#sandbox{
+  position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse at 50% 50%, var(--felt-mid) 0%, var(--felt) 35%, var(--felt-dark) 85%);
+}
+#sandbox::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'");
+}
+
+.card{
+  position:absolute;
+  width:var(--cw);height:var(--ch);
+  cursor:grab;touch-action:none;
+  transform-style:preserve-3d;
+  will-change:transform;
+  transform-origin:center center;
+  transition:box-shadow 0.12s;
+}
+.card:active{cursor:grabbing}
+.card.dragging{z-index:50000!important}
+.card-inner{
+  position:absolute;inset:0;
+  transform-style:preserve-3d;
+  transition:transform 0.35s cubic-bezier(.4,0,.2,1);
+}
+.card.flipping .card-inner{transition:transform 0.28s cubic-bezier(.4,0,.2,1)}
+.card-face{
+  position:absolute;inset:0;
+  border-radius:var(--cr);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.card-front{
+  background:#fdf8f0;
+  border:0.5px solid #d4c9b0;
+  overflow:hidden;
+}
+.card-back{
+  background:#1a1a2e;
+  transform:rotateY(180deg);
+  border:0.5px solid #2a2a4e;
+  overflow:hidden;
+}
+.card-back-pattern{
+  position:absolute;inset:5px;
+  border-radius:3px;
+  border:1.5px solid rgba(212,160,23,0.55);
+  background:
+    repeating-linear-gradient(45deg,rgba(212,160,23,0.055) 0,rgba(212,160,23,0.055) 1px,transparent 1px,transparent 9px),
+    repeating-linear-gradient(-45deg,rgba(212,160,23,0.055) 0,rgba(212,160,23,0.055) 1px,transparent 1px,transparent 9px);
+  display:flex;align-items:center;justify-content:center;
+}
+.card-back-center{
+  font-size:30px;opacity:0.3;
+  background:radial-gradient(circle,rgba(212,160,23,0.3),transparent 70%);
+  border-radius:50%;
+  width:36px;height:36px;
+  display:flex;align-items:center;justify-content:center;
+}
+.card-front svg{position:absolute;inset:0;width:100%;height:100%}
+
+.pip-corner{
+  position:absolute;
+  line-height:1;
+  display:flex;flex-direction:column;align-items:center;
+  gap:0;
+}
+.pip-corner.tl{top:3px;left:4px}
+.pip-corner.br{bottom:3px;right:4px;transform:rotate(180deg)}
+.pip-rank{font-size:13px;font-weight:700;line-height:1}
+.pip-suit{font-size:9px;line-height:1}
+.pip-center{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:32px;
+  pointer-events:none;
+}
+.red{color:#b8272c}
+.black{color:#1a1a1a}
+
+.h-corner{
+  position:absolute;width:18px;height:18px;z-index:2;
+  cursor:crosshair;
+}
+.h-corner.tl{top:0;left:0}
+.h-corner.tr{top:0;right:0}
+.h-corner.bl{bottom:0;left:0}
+.h-corner.br{bottom:0;right:0}
+
+.stack-ghost{
+  position:absolute;
+  width:var(--cw);height:var(--ch);
+  border-radius:var(--cr);
+  background:rgba(212,160,23,0.12);
+  border:1.5px dashed rgba(212,160,23,0.5);
+  pointer-events:none;z-index:49999;
+}
+
+#toolbar{
+  position:fixed;bottom:20px;left:50%;
+  transform:translateX(-50%);
+  z-index:60000;
+  display:flex;gap:6px;align-items:center;
+  background:rgba(8,16,10,0.88);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:40px;
+  padding:7px 14px;
+  backdrop-filter:blur(14px);
+  box-shadow:0 10px 40px rgba(0,0,0,0.55),0 1px 0 rgba(255,255,255,0.05) inset;
+}
+.tb{
+  background:none;border:1px solid transparent;
+  border-radius:20px;
+  color:rgba(220,240,220,0.8);
+  cursor:pointer;
+  font-size:11.5px;letter-spacing:0.06em;
+  padding:5px 12px;
+  transition:all 0.14s;
+  font-family:'Georgia',serif;
+  white-space:nowrap;
+}
+.tb:hover{background:rgba(255,255,255,0.09);color:#d4a017;border-color:rgba(212,160,23,0.35)}
+.tb.danger:hover{color:#e05555}
+.sep{width:1px;height:20px;background:rgba(255,255,255,0.1);flex-shrink:0}
+
+.ctx-menu{
+  position:fixed;z-index:70000;
+  background:rgba(8,18,11,0.96);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:11px;padding:5px;min-width:155px;
+  backdrop-filter:blur(12px);
+  box-shadow:0 8px 28px rgba(0,0,0,0.55);
+}
+.ctx-item{
+  display:block;width:100%;text-align:left;
+  background:none;border:none;
+  color:rgba(220,240,220,0.85);
+  padding:6px 10px;cursor:pointer;
+  font-size:11.5px;border-radius:7px;
+  font-family:'Georgia',serif;
+  letter-spacing:0.03em;
+  transition:background 0.1s;
+}
+.ctx-item:hover{background:rgba(255,255,255,0.09);color:#d4a017}
+.ctx-sep{height:1px;background:rgba(255,255,255,0.08);margin:3px 0}
+</style>
+</head>
+<body>
+<div id="sandbox"></div>
+
+<div id="toolbar">
+  <button class="tb" id="b-shuffle">Shuffle</button>
+  <button class="tb" id="b-faceup">Face Up</button>
+  <button class="tb" id="b-facedown">Face Down</button>
+  <div class="sep"></div>
+  <button class="tb danger" id="b-reset">Reset</button>
+</div>
+
+<script>
+const CW = 72, CH = 100;
+const SUITS = ['♠','♥','♦','♣'];
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const IS_RED = {'♥':true,'♦':true,'♠':false,'♣':false};
+const FACE_CARDS = new Set(['J','Q','K']);
+
+const GameState = {
+  cards: [],
+  create() {
+    this.cards = [];
+    let id = 0;
+    for (const suit of SUITS)
+      for (const rank of RANKS)
+        this.cards.push({ id: id++, suit, rank, faceUp: false });
+  },
+  shuffle() {
+    const a = this.cards;
+    for (let i = a.length-1; i > 0; i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+  },
+  flip(id) {
+    const c = this.cards.find(c=>c.id===id);
+    if (c) c.faceUp = !c.faceUp;
+  },
+  setFace(id, up) {
+    const c = this.cards.find(c=>c.id===id);
+    if (c) c.faceUp = up;
+  },
+  get(id) { return this.cards.find(c=>c.id===id); }
+};
+
+class Body {
+  constructor(id) {
+    this.id = id;
+    this.x = 0; this.y = 0; this.a = 0;
+    this.vx = 0; this.vy = 0; this.va = 0;
+    this.z = 1;
+    this.pinned = false;
+  }
+  step(dt) {
+    if (this.pinned) return;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.a += this.va * dt;
+    const d = 0.82, ad = 0.94;
+    this.vx *= d; this.vy *= d; this.va *= ad;
+    if (Math.abs(this.vx)<0.008) this.vx=0;
+    if (Math.abs(this.vy)<0.008) this.vy=0;
+    if (Math.abs(this.va)<0.00015) this.va=0;
+  }
+  hit(px, py) {
+    const dx=px-this.x, dy=py-this.y;
+    const cos=Math.cos(-this.a), sin=Math.sin(-this.a);
+    const lx=dx*cos-dy*sin, ly=dx*sin+dy*cos;
+    return Math.abs(lx)<=CW/2 && Math.abs(ly)<=CH/2;
+  }
+  corner(cx, cy) {
+    const lx=cx*CW/2, ly=cy*CH/2;
+    const cos=Math.cos(this.a), sin=Math.sin(this.a);
+    return {x:this.x+lx*cos-ly*sin, y:this.y+lx*sin+ly*cos};
+  }
+  get aabb() {
+    const hw=(Math.abs(Math.cos(this.a))*CW+Math.abs(Math.sin(this.a))*CH)/2;
+    const hh=(Math.abs(Math.sin(this.a))*CW+Math.abs(Math.cos(this.a))*CH)/2;
+    return {x:this.x-hw,y:this.y-hh,w:hw*2,h:hh*2};
+  }
+}
+
+const Physics = {
+  bodies: new Map(),
+  _z: 1,
+  bounds: {w:window.innerWidth, h:window.innerHeight},
+
+  add(id) {
+    const b = new Body(id);
+    this.bodies.set(id, b);
+    return b;
+  },
+  get(id) { return this.bodies.get(id); },
+  remove(id) { this.bodies.delete(id); },
+  clear() { this.bodies.clear(); this._z = 1; },
+
+  step(dt) {
+    const bods = [...this.bodies.values()];
+    for (const b of bods) {
+      b.step(dt);
+      this._clamp(b);
+    }
+    this._collide(bods);
+  },
+
+  _clamp(b) {
+    if (b.pinned) return;
+    const m=8, hw=CW/2+2, hh=CH/2+2;
+    const W=this.bounds.w, H=this.bounds.h;
+    if (b.x-hw<m){b.x=hw+m;b.vx*=-0.25}
+    if (b.x+hw>W-m){b.x=W-hw-m;b.vx*=-0.25}
+    if (b.y-hh<m){b.y=hh+m;b.vy*=-0.25}
+    if (b.y+hh>H-m){b.y=H-hh-m;b.vy*=-0.25}
+  },
+
+  _collide(bods) {
+    // Collect currently dragged IDs so they skip collision
+    const draggedIds = Input.drag ? new Set(Input.drag.pileIds) : new Set();
+    for (let i=0;i<bods.length;i++) {
+      const a=bods[i];
+      if (draggedIds.has(a.id)) continue;
+      const spd=Math.abs(a.vx)+Math.abs(a.vy);
+      if (spd<0.3) continue;
+      const aa=a.aabb;
+      for (let j=i+1;j<bods.length;j++) {
+        const b=bods[j];
+        if (draggedIds.has(b.id)) continue;
+        const ba=b.aabb;
+        if (aa.x+aa.w<ba.x||ba.x+ba.w<aa.x) continue;
+        if (aa.y+aa.h<ba.y||ba.y+ba.h<aa.y) continue;
+        const dx=b.x-a.x, dy=b.y-a.y;
+        const dist=Math.sqrt(dx*dx+dy*dy)||1;
+        const overlap=CW*0.55-dist;
+        if (overlap>0) {
+          const f=overlap*0.07;
+          const nx=dx/dist, ny=dy/dist;
+          a.vx-=nx*f; a.vy-=ny*f;
+          b.vx+=nx*f; b.vy+=ny*f;
+        }
+      }
+    }
+  },
+
+  topAt(x, y) {
+    let best=null, bz=-1;
+    for (const b of this.bodies.values()) {
+      if (b.hit(x,y) && b.z>bz) { best=b; bz=b.z; }
+    }
+    return best;
+  },
+
+  bringUp(id, extra=0) {
+    const b=this.bodies.get(id);
+    if (b) b.z = ++this._z + extra;
+    return b;
+  },
+  sendDown(id) {
+    const b=this.bodies.get(id);
+    if (b) b.z=0;
+  },
+  nearbyIds(id, threshold=28) {
+    const base=this.bodies.get(id); if(!base) return [];
+    const out=[id];
+    for (const b of this.bodies.values()) {
+      if (b.id===id) continue;
+      const dx=b.x-base.x, dy=b.y-base.y;
+      if (Math.sqrt(dx*dx+dy*dy)<threshold) out.push(b.id);
+    }
+    return out;
+  }
+};
+
+const Renderer = {
+  sandbox: document.getElementById('sandbox'),
+  els: new Map(),
+  _raf: null,
+
+  buildCard(card) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = card.id;
+
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+    inner.style.transformStyle = 'preserve-3d';
+
+    const front = document.createElement('div');
+    front.className = 'card-face card-front';
+    const cls = IS_RED[card.suit] ? 'red' : 'black';
+    ['tl','br'].forEach(pos => {
+      const pip = document.createElement('div');
+      pip.className = `pip-corner ${pos}`;
+      pip.innerHTML = `<span class="pip-rank ${cls}">${card.rank}</span><span class="pip-suit ${cls}">${card.suit}</span>`;
+      front.appendChild(pip);
+    });
+    const ctr = document.createElement('div');
+    ctr.className = `pip-center ${cls}`;
+    if (FACE_CARDS.has(card.rank)) {
+      ctr.style.fontSize = '22px';
+      const faceMap = {J:'♟',Q:'♛',K:'♚'};
+      ctr.textContent = faceMap[card.rank];
+    } else if (card.rank === 'A') {
+      ctr.style.fontSize = '38px';
+      ctr.textContent = card.suit;
+    } else {
+      ctr.style.fontSize = '22px';
+      ctr.textContent = card.suit;
+    }
+    front.appendChild(ctr);
+
+    const back = document.createElement('div');
+    back.className = 'card-face card-back';
+    const pat = document.createElement('div');
+    pat.className = 'card-back-pattern';
+    const cen = document.createElement('div');
+    cen.className = 'card-back-center';
+    cen.textContent = '✦';
+    pat.appendChild(cen);
+    back.appendChild(pat);
+
+    const corners = [['tl',-1,-1],['tr',1,-1],['bl',-1,1],['br',1,1]];
+    for (const [cls2] of corners) {
+      const h = document.createElement('div');
+      h.className = `h-corner ${cls2}`;
+      h.dataset.act = 'rot';
+      front.appendChild(h);
+      back.appendChild(h.cloneNode(true));
+    }
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    el.appendChild(inner);
+    this.sandbox.appendChild(el);
+    this.els.set(card.id, el);
+    return el;
+  },
+
+  removeAll() {
+    for (const el of this.els.values()) el.remove();
+    this.els.clear();
+  },
+
+  render() {
+    for (const [id, el] of this.els) {
+      const b = Physics.get(id);
+      const c = GameState.get(id);
+      if (!b || !c) continue;
+
+      const deg = b.a * 180 / Math.PI;
+      const tx = b.x - CW/2, ty = b.y - CH/2;
+      el.style.transform = `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) rotate(${deg.toFixed(2)}deg)`;
+      el.style.zIndex = b.z;
+
+      const spd = Math.sqrt(b.vx**2+b.vy**2);
+      const lift = Math.min(spd*2.5 + (el.classList.contains('dragging')?20:4), 28);
+      el.style.boxShadow = `0 ${lift.toFixed(0)}px ${(lift*1.8).toFixed(0)}px rgba(0,0,0,${(0.28+lift*0.012).toFixed(2)})`;
+
+      const inner = el.querySelector('.card-inner');
+      if (!inner.style.transition.includes('none')) {
+        inner.style.transform = c.faceUp ? 'rotateY(0deg)' : 'rotateY(180deg)';
+      }
+    }
+  },
+
+  startLoop() {
+    let last = null;
+    const loop = (t) => {
+      if (last) Physics.step(Math.min((t-last)/16.67,4));
+      last = t;
+      this.render();
+      this._raf = requestAnimationFrame(loop);
+    };
+    this._raf = requestAnimationFrame(loop);
+  }
+};
+
+const SNAP_CENTER_THRESHOLD = 22;
+const SNAP_SIDE_THRESHOLD = 38;
+
+const Input = {
+  drag: null,
+  ctxMenu: null,
+  ghost: null,
+  snapTarget: null,
+  snapMode: null,
+
+  init() {
+    const s = Renderer.sandbox;
+    s.addEventListener('mousedown', e => this.down(e));
+    window.addEventListener('mousemove', e => this.move(e));
+    window.addEventListener('mouseup', e => this.up(e));
+    s.addEventListener('dblclick', e => this.dbl(e));
+    s.addEventListener('contextmenu', e => this.ctx(e));
+    s.addEventListener('touchstart', e => {e.preventDefault();this.down(e)},{passive:false});
+    window.addEventListener('touchmove', e => {e.preventDefault();this.move(e)},{passive:false});
+    window.addEventListener('touchend', e => this.up(e));
+    document.addEventListener('keydown', e => {
+      if (e.key==='Escape') this.dismissCtx();
+    });
+  },
+
+  xy(e) {
+    if (e.touches && e.touches.length)
+      return {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    return {x:e.clientX, y:e.clientY};
+  },
+
+  getAct(e) {
+    const el = e.target;
+    if (el.dataset && el.dataset.act) return el.dataset.act;
+    return 'move';
+  },
+
+  _removeGhost() {
+    if (this.ghost) { this.ghost.remove(); this.ghost = null; }
+    this.snapTarget = null;
+    this.snapMode = null;
+  },
+
+  _updateSnap(dragId, body) {
+    let bestDist = Infinity;
+    let bestId = null;
+    let bestMode = null;
+
+    for (const b of Physics.bodies.values()) {
+      if (b.id === dragId) continue;
+      const dx = body.x - b.x;
+      const dy = body.y - b.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      if (dist < SNAP_CENTER_THRESHOLD) {
+        if (dist < bestDist) { bestDist = dist; bestId = b.id; bestMode = 'center'; }
+      } else if (dist < SNAP_SIDE_THRESHOLD) {
+        if (dist < bestDist) { bestDist = dist; bestId = b.id; bestMode = 'side'; }
+      }
+    }
+
+    if (bestId === null) {
+      this._removeGhost();
+      return;
+    }
+
+    const target = Physics.get(bestId);
+    this.snapTarget = bestId;
+    this.snapMode = bestMode;
+
+    let gx, gy;
+    if (bestMode === 'center') {
+      gx = target.x - CW/2;
+      gy = target.y - CH/2;
+    } else {
+      gx = body.x - CW/2;
+      gy = body.y - CH/2;
+    }
+
+    if (!this.ghost) {
+      this.ghost = document.createElement('div');
+      this.ghost.className = 'stack-ghost';
+      Renderer.sandbox.appendChild(this.ghost);
+    }
+    this.ghost.style.left = gx + 'px';
+    this.ghost.style.top = gy + 'px';
+    this.ghost.style.transform = `rotate(${target.a * 180 / Math.PI}deg)`;
+    this.ghost.style.transformOrigin = 'center center';
+  },
+
+  down(e) {
+    if (e.button===2 || (e.button===0 && e.ctrlKey)) return;
+    this.dismissCtx();
+    const {x,y} = this.xy(e);
+    const act = this.getAct(e);
+    const body = Physics.topAt(x, y);
+    if (!body) return;
+    e.preventDefault();
+
+    const withPile = e.shiftKey || e.ctrlKey || e.metaKey;
+    const withSpread = false;
+    const pileIds = withPile ? Physics.nearbyIds(body.id) : [body.id];
+
+    for (const id of pileIds) Physics.bringUp(id);
+    Physics.bringUp(body.id, pileIds.length);
+
+    const el = Renderer.els.get(body.id);
+    if (el) el.classList.add('dragging');
+
+    const offsets = {};
+    for (const id of pileIds) {
+      const b = Physics.get(id);
+      offsets[id] = {dx: b.x - body.x, dy: b.y - body.y, da: b.a - body.a};
+    }
+
+    this.drag = {
+      id: body.id,
+      act,
+      x0: x, y0: y,
+      bx0: body.x, by0: body.y,
+      ba0: body.a,
+      pileIds,
+      offsets,
+      lastX: x, lastY: y,
+      moved: false,
+      withSpread,
+      spreadDropped: new Set(),
+    };
+  },
+
+  move(e) {
+    if (!this.drag) return;
+    e.preventDefault();
+    const {x,y} = this.xy(e);
+    const d = this.drag;
+    const dx = x - d.x0, dy = y - d.y0;
+    const body = Physics.get(d.id);
+    if (!body) return;
+
+    d.moved = Math.abs(dx)+Math.abs(dy)>3;
+
+    if (d.act === 'rot') {
+      const a0 = Math.atan2(d.y0-d.by0, d.x0-d.bx0);
+      const a1 = Math.atan2(y-d.by0, x-d.bx0);
+      const newA = d.ba0 + (a1-a0);
+      body.va = (newA - body.a) * 0.5;
+      body.a = newA;
+    } else {
+      body.x = d.bx0 + dx;
+      body.y = d.by0 + dy;
+      body.vx = (x - d.lastX) * 0.5;
+      body.vy = (y - d.lastY) * 0.5;
+
+      for (const id of d.pileIds) {
+        if (id===d.id) continue;
+        if (d.spreadDropped && d.spreadDropped.has(id)) continue;
+        const b = Physics.get(id);
+        const off = d.offsets[id];
+        b.x = body.x + off.dx;
+        b.y = body.y + off.dy;
+      }
+
+      if (d.withSpread && d.pileIds.length > 1) {
+        const totalDist = Math.sqrt((body.x - d.bx0)**2 + (body.y - d.by0)**2);
+        const SPREAD_INTERVAL = 55;
+        const dropCount = Math.min(
+          Math.floor(totalDist / SPREAD_INTERVAL),
+          d.pileIds.length - 1
+        );
+        for (let k = 0; k < dropCount; k++) {
+          const dropId = d.pileIds[k];
+          if (dropId === d.id || (d.spreadDropped && d.spreadDropped.has(dropId))) continue;
+          d.spreadDropped.add(dropId);
+          const db = Physics.get(dropId);
+          if (db) { db.vx = 0; db.vy = 0; db.va = 0; }
+          const del = Renderer.els.get(dropId);
+          if (del) del.classList.remove('dragging');
+        }
+      }
+
+      if (d.act === 'move') {
+        this._updateSnap(d.id, body);
+      }
+    }
+
+    d.lastX = x; d.lastY = y;
+  },
+
+  up(e) {
+    if (!this.drag) return;
+    const d = this.drag;
+    const body = Physics.get(d.id);
+    const el = Renderer.els.get(d.id);
+    if (el) el.classList.remove('dragging');
+
+    if (body && d.act === 'move') {
+      if (this.snapTarget !== null) {
+        const target = Physics.get(this.snapTarget);
+        if (target) {
+          if (this.snapMode === 'center') {
+            body.x = target.x;
+            body.y = target.y;
+            body.vx = 0; body.vy = 0; body.va = 0;
+            body.a = target.a;
+          } else {
+            body.vx += (target.x - body.x) * 0.18;
+            body.vy += (target.y - body.y) * 0.18;
+            body.va += (target.a - body.a) * 0.15;
+          }
+        }
+      } else {
+        const rvx = (d.lastX - d.x0) * 0.15;
+        const rvy = (d.lastY - d.y0) * 0.15;
+        body.vx = rvx; body.vy = rvy;
+      }
+    }
+
+    this._removeGhost();
+    this.drag = null;
+  },
+
+  dbl(e) {
+    const {x,y} = this.xy(e);
+    const body = Physics.topAt(x,y);
+    if (body) {
+      el_flip_anim(body.id);
+      GameState.flip(body.id);
+    }
+  },
+
+  ctx(e) {
+    e.preventDefault();
+    const {x,y} = this.xy(e);
+    const body = Physics.topAt(x,y);
+    if (!body) return;
+    if (e.shiftKey) {
+      this.showStackCtx(x, y, body.id);
+    } else {
+      this.showCtx(x, y, body.id);
+    }
+  },
+
+  showCtx(x, y, id) {
+    this.dismissCtx();
+    const card = GameState.get(id);
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    const items = [
+      ['Flip', () => { el_flip_anim(id); GameState.flip(id); }],
+      ['Face Up', () => { if(!card.faceUp){el_flip_anim(id);} GameState.setFace(id,true); }],
+      ['Face Down', () => { if(card.faceUp){el_flip_anim(id);} GameState.setFace(id,false); }],
+      null,
+      ['Bring to Front', () => Physics.bringUp(id)],
+      ['Send to Back', () => Physics.sendDown(id)],
+      ['Straighten', () => { const b=Physics.get(id); b.a=0; b.va=0; }],
+      null,
+      ['Fling!', () => {
+        const b = Physics.get(id);
+        const ang = Math.random()*Math.PI*2;
+        b.vx = Math.cos(ang)*18; b.vy = Math.sin(ang)*18;
+        b.va = (Math.random()-0.5)*0.5;
+      }],
+    ];
+    menu.style.left = Math.min(x, window.innerWidth-170)+'px';
+    menu.style.top = Math.min(y, window.innerHeight-250)+'px';
+
+    for (const item of items) {
+      if (!item) { const s=document.createElement('div'); s.className='ctx-sep'; menu.appendChild(s); continue; }
+      const btn = document.createElement('button');
+      btn.className = 'ctx-item';
+      btn.textContent = item[0];
+      btn.onclick = () => { item[1](); this.dismissCtx(); };
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    this.ctxMenu = menu;
+    setTimeout(() => {
+      document.addEventListener('click', () => this.dismissCtx(), {once:true});
+    }, 50);
+  },
+
+  showStackCtx(x, y, id) {
+    this.dismissCtx();
+    const stackIds = Physics.nearbyIds(id);
+    const label = stackIds.length > 1 ? `Stack (${stackIds.length} cards)` : 'Single Card';
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'padding:4px 10px 5px;font-size:10px;letter-spacing:0.08em;color:rgba(212,160,23,0.7);text-transform:uppercase;font-family:Georgia,serif;';
+    title.textContent = label;
+    menu.appendChild(title);
+
+    const sep0 = document.createElement('div'); sep0.className='ctx-sep'; menu.appendChild(sep0);
+
+    const items = [
+      ['All Face Up', () => {
+        for (const sid of stackIds) {
+          const c = GameState.get(sid);
+          if (c && !c.faceUp) { el_flip_anim(sid); GameState.setFace(sid, true); }
+        }
+      }],
+      ['All Face Down', () => {
+        for (const sid of stackIds) {
+          const c = GameState.get(sid);
+          if (c && c.faceUp) { el_flip_anim(sid); GameState.setFace(sid, false); }
+        }
+      }],
+      ['Flip All', () => {
+        for (const sid of stackIds) { el_flip_anim(sid); GameState.flip(sid); }
+      }],
+      null,
+      ['Shuffle Stack', () => {
+        const bodies = stackIds.map(sid => Physics.get(sid)).filter(Boolean);
+        const cx = bodies.reduce((s,b)=>s+b.x,0)/bodies.length;
+        const cy = bodies.reduce((s,b)=>s+b.y,0)/bodies.length;
+        for (const b of bodies) {
+          b.pinned = false;
+          b.vx = (Math.random()-0.5)*22;
+          b.vy = (Math.random()-0.5)*22;
+          b.va = (Math.random()-0.5)*0.6;
+        }
+        // Phase 2: tween back to stack center in new random z-order
+        setTimeout(() => {
+          const newOrder = [...stackIds].sort(() => Math.random()-0.5);
+          for (const b of bodies) { b.pinned=true; b.vx=0; b.vy=0; b.va=0; }
+          for (const sid of newOrder) {
+            const b = Physics.get(sid);
+            if (!b) continue;
+            const targetX=cx+(Math.random()-0.5)*3;
+            const targetY=cy+(Math.random()-0.5)*3;
+            const targetA=(Math.random()-0.5)*0.06;
+            const zOrder=++Physics._z;
+            const delay=Math.random()*320;
+            const sx=b.x, sy=b.y, sa=b.a;
+            const startTime=performance.now()+delay;
+            const duration=380+Math.random()*140;
+            function tweenStep(now) {
+              const t=Math.max(0,(now-startTime)/duration);
+              if (t<1) {
+                const e=1-(1-t)**3;
+                b.x=sx+(targetX-sx)*e;
+                b.y=sy+(targetY-sy)*e;
+                b.a=sa+(targetA-sa)*e;
+                requestAnimationFrame(tweenStep);
+              } else {
+                b.x=targetX; b.y=targetY; b.a=targetA;
+                b.z=zOrder; b.pinned=false;
+              }
+            }
+            requestAnimationFrame(tweenStep);
+          }
+        }, 600);
+      }],
+    ];
+
+    menu.style.left = Math.min(x, window.innerWidth-175)+'px';
+    menu.style.top = Math.min(y, window.innerHeight-230)+'px';
+
+    for (const item of items) {
+      if (!item) { const s=document.createElement('div'); s.className='ctx-sep'; menu.appendChild(s); continue; }
+      const btn = document.createElement('button');
+      btn.className = 'ctx-item';
+      btn.textContent = item[0];
+      btn.onclick = () => { item[1](); this.dismissCtx(); };
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    this.ctxMenu = menu;
+    setTimeout(() => {
+      document.addEventListener('click', () => this.dismissCtx(), {once:true});
+    }, 50);
+  },
+
+  dismissCtx() {
+    if (this.ctxMenu) { this.ctxMenu.remove(); this.ctxMenu=null; }
+  }
+};
+
+function el_flip_anim(id) {
+  const el = Renderer.els.get(id);
+  if (el) { el.classList.add('flipping'); setTimeout(()=>el.classList.remove('flipping'),400); }
+}
+
+function W() { return window.innerWidth; }
+function H() { return window.innerHeight; }
+
+const App = {
+  init() {
+    GameState.create();
+    Renderer.removeAll();
+    Physics.clear();
+
+    const cx = W()/2, cy = H()/2;
+    for (let i=0; i<GameState.cards.length; i++) {
+      const c = GameState.cards[i];
+      const b = Physics.add(c.id);
+      b.x = cx + (Math.random()-0.5)*3;
+      b.y = cy + (Math.random()-0.5)*3;
+      b.a = (Math.random()-0.5)*0.06;
+      b.z = i+1;
+      Renderer.buildCard(c);
+    }
+    Physics._z = 53;
+  },
+
+  pile() {
+    const cx=W()/2, cy=H()/2;
+    for (let i=0; i<GameState.cards.length; i++) {
+      const b = Physics.get(GameState.cards[i].id);
+      if (!b) continue;
+      b.vx = (cx-b.x)*0.28; b.vy = (cy-b.y)*0.28;
+      b.va = (0-b.a)*0.22;
+      b.z = i+1;
+    }
+  },
+
+  shuffle() {
+    GameState.shuffle();
+    const cx = W()/2, cy = H()/2;
+
+
+    for (const [,b] of Physics.bodies) {
+      b.vx = (Math.random()-0.5)*24;
+      b.vy = (Math.random()-0.5)*24;
+      b.va = (Math.random()-0.5)*0.7;
+      b.pinned = false;
+    }
+
+    setTimeout(() => {
+      const cards = [...GameState.cards];
+      let i = 0;
+
+      for (const [,b] of Physics.bodies) {
+        b.pinned = true;
+        b.vx = 0; b.vy = 0; b.va = 0;
+      }
+
+      for (const c of cards) {
+        const b = Physics.get(c.id);
+        if (!b) { i++; continue; }
+        const targetX = cx + (Math.random()-0.5)*3;
+        const targetY = cy + (Math.random()-0.5)*3;
+        const targetA = (Math.random()-0.5)*0.06;
+        const zOrder = ++i;
+        const delay = Math.random() * 320;
+
+        const sx = b.x, sy = b.y, sa = b.a;
+        const startTime = performance.now() + delay;
+        const duration = 380 + Math.random() * 140;
+
+        function tweenStep(now) {
+          const t = Math.max(0, (now - startTime) / duration);
+          if (t < 1) {
+            const e = 1 - (1 - t) ** 3;
+            b.x = sx + (targetX - sx) * e;
+            b.y = sy + (targetY - sy) * e;
+            b.a = sa + (targetA - sa) * e;
+            requestAnimationFrame(tweenStep);
+          } else {
+            b.x = targetX; b.y = targetY; b.a = targetA;
+            b.z = zOrder;
+            b.pinned = false;
+          }
+        }
+        requestAnimationFrame(tweenStep);
+      }
+      Physics._z = i + 1;
+    }, 600);
+  },
+
+  setAllFace(up) {
+    for (const c of GameState.cards) {
+      if (c.faceUp !== up) GameState.setFace(c.id, up);
+    }
+  }
+};
+
+document.getElementById('b-shuffle').onclick = () => App.shuffle();
+document.getElementById('b-faceup').onclick = () => App.setAllFace(true);
+document.getElementById('b-facedown').onclick = () => App.setAllFace(false);
+document.getElementById('b-reset').onclick = () => App.init();
+
+window.addEventListener('resize', () => {
+  Physics.bounds = {w:window.innerWidth, h:window.innerHeight};
+});
+
+App.init();
+Input.init();
+Renderer.startLoop();
+</script>
+</body>
+</html>
